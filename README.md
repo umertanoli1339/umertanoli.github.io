@@ -1,5 +1,4 @@
 # umertanoli.github.io
-Digital Marketing Portfolio
 Welcome to my GitHub portfolio! This repository showcases my expertise and achievements as a Digital Marketing Executive, highlighting my ability to drive business growth through innovative strategies and technical solutions.
 
 About Me
@@ -41,7 +40,6 @@ Platforms: WordPress, Shopify, Wix
 Get in Touch
 Feel free to connect with me for collaborations, projects, or discussions about digital marketing:
 
-LinkedIn: [Insert LinkedIn Profile Link]
-Portfolio Website: [Insert Portfolio Website Link]
-Email: [Insert Email Address]
+LinkedIn: https://www.linkedin.com/in/muhammad-umer-marketing-executive/
+Email: umertanoli1339@gmail.com
 I hope this portfolio inspires and provides insight into my skills and passion for digital marketing. Contributions, feedback, or discussions are always welcome!
