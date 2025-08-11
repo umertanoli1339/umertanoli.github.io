@@ -7,11 +7,12 @@ from typing import List, Tuple, Optional, Dict
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.remote.webdriver import WebDriver
+from webdriver_manager.firefox import GeckoDriverManager
 
 
 # ---------- CONFIG ----------
@@ -52,35 +53,32 @@ def extract_email(text: Optional[str]) -> str:
     return m.group(0).lower() if m else ""
 
 
-def setup_driver() -> webdriver.Chrome:
-    options = Options()
+def setup_driver() -> WebDriver:
+    options = FirefoxOptions()
     if HEADLESS:
-        options.add_argument("--headless=new")
+        options.add_argument("-headless")
 
-    # Stability/perf
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-software-rasterizer")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--no-sandbox")
+    # Window size
+    options.add_argument("--width=1920")
+    options.add_argument("--height=1080")
 
-    # Stealth-ish
-    options.add_argument("--window-size=1920,1080")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument(
-        "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    # Basic stealth preferences
+    options.set_preference("dom.webdriver.enabled", False)
+    options.set_preference("useAutomationExtension", False)
+    options.set_preference(
+        "general.useragent.override",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
     )
 
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
+    driver = webdriver.Firefox(
+        service=FirefoxService(GeckoDriverManager().install()),
         options=options,
     )
     driver.implicitly_wait(5)
     return driver
 
 
-def handle_consent_popup(driver: webdriver.Chrome) -> None:
+def handle_consent_popup(driver: WebDriver) -> None:
     # Google sometimes shows a consent dialog inside an iframe
     try:
         iframes = driver.find_elements(By.CSS_SELECTOR, "iframe[src*='consent']")
@@ -117,12 +115,12 @@ def handle_consent_popup(driver: webdriver.Chrome) -> None:
         print("[INFO] No consent popup found.")
 
 
-def _find_results_feed(driver: webdriver.Chrome):
+def _find_results_feed(driver: WebDriver):
     feeds = driver.find_elements(By.CSS_SELECTOR, "div[role='feed']")
     return feeds[0] if feeds else None
 
 
-def scroll_results_to_bottom(driver: webdriver.Chrome, max_scrolls: int = 50) -> None:
+def scroll_results_to_bottom(driver: WebDriver, max_scrolls: int = 50) -> None:
     feed = _find_results_feed(driver)
     if not feed:
         # As a fallback, try window scroll (less reliable)
@@ -152,7 +150,7 @@ def scroll_results_to_bottom(driver: webdriver.Chrome, max_scrolls: int = 50) ->
         last_scroll_top = scroll_top
 
 
-def get_listings(driver: webdriver.Chrome) -> List:
+def get_listings(driver: WebDriver) -> List:
     """Get all listing elements with robust selectors scoped to the results feed."""
     selectors = [
         "div[role='feed'] div.Nv2PK",  # primary listing container
@@ -178,7 +176,7 @@ def get_listings(driver: webdriver.Chrome) -> List:
     return []
 
 
-def _first_text(driver: webdriver.Chrome, selectors: List[Tuple[str, str]]) -> str:
+def _first_text(driver: WebDriver, selectors: List[Tuple[str, str]]) -> str:
     for by, sel in selectors:
         try:
             el = driver.find_element(by, sel)
@@ -190,7 +188,7 @@ def _first_text(driver: webdriver.Chrome, selectors: List[Tuple[str, str]]) -> s
     return ""
 
 
-def scrape_business_details(driver: webdriver.Chrome) -> Dict[str, str]:
+def scrape_business_details(driver: WebDriver) -> Dict[str, str]:
     """Scrape details from the business panel with robust error handling"""
     details: Dict[str, str] = {
         "Business Name": "",
@@ -266,12 +264,14 @@ def scrape_business_details(driver: webdriver.Chrome) -> Dict[str, str]:
                 if m:
                     details["Rating"] = m.group(1)
 
-            # Reviews often on a button containing "reviews"
-            review_btns = driver.find_elements(By.CSS_SELECTOR, "div[role='main'] button[aria-label*='reviews'], div[role='main'] button:has(span[aria-label*='reviews'])")
+            # Reviews: look for buttons or elements with 'reviews' in aria-label or text
+            review_btns = driver.find_elements(By.CSS_SELECTOR, "div[role='main'] button[aria-label*='reviews']")
             reviews_text = ""
-            for btn in review_btns:
-                txt = clean_text(btn.text)
-                if txt and ("review" in txt.lower() or re.search(r"\b\d+[\,\.]?\d*\b", txt)):
+            candidates = review_btns + driver.find_elements(By.CSS_SELECTOR, "div[role='main'] button, div[role='main'] a")
+            for el in candidates:
+                txt = (el.get_attribute("aria-label") or "") + " " + (el.text or "")
+                txt = clean_text(txt)
+                if txt and ("review" in txt.lower()):
                     reviews_text = txt
                     break
             if reviews_text:
@@ -290,7 +290,7 @@ def scrape_business_details(driver: webdriver.Chrome) -> Dict[str, str]:
     return details
 
 
-def click_listing(driver: webdriver.Chrome, listing) -> None:
+def click_listing(driver: WebDriver, listing) -> None:
     # Prefer clicking the internal anchor if present
     try:
         link = listing.find_element(By.CSS_SELECTOR, "a.hfPXJ, a[href^='https://www.google.com/maps/place']")
@@ -307,7 +307,7 @@ def click_listing(driver: webdriver.Chrome, listing) -> None:
     driver.execute_script("arguments[0].click();", listing)
 
 
-def wait_for_place_panel(driver: webdriver.Chrome) -> None:
+def wait_for_place_panel(driver: WebDriver) -> None:
     # Ensure the main panel title exists
     WebDriverWait(driver, WAIT_TIMEOUT).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "div[role='main'] h1"))
